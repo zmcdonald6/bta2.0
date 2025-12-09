@@ -1,0 +1,10 @@
+#ignore secrets
+secrets.toml
+__pycache__/
+test_connection.py
+~$*.xlsx
+ExpenseTemplateTest.xlsx
+Throwaways/
+tests/
+dumps/
+private/

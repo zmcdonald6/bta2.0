@@ -9,3 +9,5 @@ tests/
 dumps/
 private/
 Documentation/
+.venv/
+requirements.txt

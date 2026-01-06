@@ -155,14 +155,14 @@ def get_login_logs():
 
 
 #File Upload CRUD
-def add_uploaded_file(file_name, file_type, uploader_email, file_url):
+def add_uploaded_file(file_name, file_type, uploader_email, file_url, year):
     db = get_db()
     with db.cursor() as c:
         c.execute("""
             INSERT INTO uploadedfiles
-            (file_name, file_type, uploader_email, upload_date, file_url)
-            VALUES (%s, %s, %s, NOW(), %s)
-        """, (file_name, file_type, uploader_email, file_url))
+            (file_name, file_type, uploader_email, upload_date, file_url, year)
+            VALUES (%s, %s, %s, NOW(), %s, %s)
+        """, (file_name, file_type, uploader_email, file_url, year))
     return True
 
 
@@ -177,7 +177,7 @@ def get_uploaded_files():
     db = get_db()
     with db.cursor() as c:
         c.execute("""
-            SELECT file_name, file_type, uploader_email, upload_date, file_url
+            SELECT *
             FROM uploadedfiles
             ORDER BY upload_date DESC
         """)
@@ -188,34 +188,28 @@ def get_uploaded_files():
 
 #Budget State Operations
 def load_budget_state_monthly(file_name: str):
-    #db = get_db()
-    #with db.cursor() as c:
-    #    c.execute("""
-    #        SELECT category, subcategory, month, amount, status_category
-    #        FROM budget_state
-    #        WHERE file_name = %s
-    #    """, (file_name,))
-    #    rows = c.fetchall()
-    #return rows
     """
-    Loads budget-state monthly classification from MySQL.
+    Loads budget-state yearly classification from MySQL.
     Always returns a DataFrame with the required columns.
     Never returns a tuple or list.
+    Note: Function name kept as 'monthly' for backward compatibility.
     """
 
     db = get_db()
     with db.cursor() as c:
-        c.execute("""
-            SELECT category, subcategory, month, amount, status_category
+        # Query for yearly classifications (no month column)
+        query = """
+            SELECT category, subcategory, amount, status_category
             FROM budget_state
             WHERE file_name = %s
-        """, (file_name,))
+        """
+        c.execute(query, (file_name,))
         rows = c.fetchall()
 
     # If nothing in DB → return empty DataFrame with required columns
     if not rows:
         return pd.DataFrame(columns=[
-            "Category", "Sub-Category", "Month",
+            "Category", "Sub-Category",
             "Amount", "Status Category"
         ])
 
@@ -226,34 +220,35 @@ def load_budget_state_monthly(file_name: str):
     df = df.rename(columns={
         "category": "Category",
         "subcategory": "Sub-Category",
-        "month": "Month",
         "amount": "Amount",
         "status_category": "Status Category",
     })
 
     # Ensure required columns exist
-    required = ["Category", "Sub-Category", "Month", "Amount", "Status Category"]
+    required = ["Category", "Sub-Category", "Amount", "Status Category"]
     for col in required:
         if col not in df.columns:
             df[col] = None
 
     return df[required]
 
-def save_budget_state_monthly(file_name, df_melted, user_email):
+def save_budget_state_monthly(file_name, df_yearly, user_email):
     """
-    Saves budget-state monthly classification using MySQL UPSERT.
+    Saves budget-state yearly classification using MySQL UPSERT.
     Only inserts new rows or updates existing ones.
+    Note: Function name kept as 'monthly' for backward compatibility.
+    Expects DataFrame with columns: Category, Sub-Category, Amount, Status Category
     """
     db = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    rows = df_melted.to_dict(orient="records")
+    rows = df_yearly.to_dict(orient="records")
 
     with db.cursor() as c:
         for r in rows:
             c.execute("""
                 INSERT INTO budget_state
-                (file_name, category, subcategory, month, amount, status_category, updated_by, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (file_name, category, subcategory, amount, status_category, updated_by, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
 
                 ON DUPLICATE KEY UPDATE
                     amount = VALUES(amount),
@@ -264,7 +259,6 @@ def save_budget_state_monthly(file_name, df_melted, user_email):
                 file_name,
                 r["Category"],
                 r["Sub-Category"],
-                r["Month"],
                 r["Amount"],
                 r["Status Category"],
                 user_email,
@@ -350,7 +344,7 @@ def set_active_budget(file_name:str):
 
         elif len(rows) == 1:    #If one row exists
             active_id = rows[0]["id"]
-            c.execute("update active_budget set file_name = %s, updated_at = NOW(), where id = %s",
+            c.execute("update active_budget set file_name = %s, updated_at = NOW() where id = %s",
                       (file_name, active_id, ))
             
         else:   #if multiple rows exits (safety cleanu[])

@@ -17,7 +17,53 @@ from .db import (
     get_ip
 )
 
+from streamlit_cookies_manager import EncryptedCookieManager
 
+#Managing Cookies
+COOKIE_TTL = 43200
+def init_cookies():
+    cookies = EncryptedCookieManager(prefix = st.secrets["cookies"]["prefix"],
+                                     password = st.secrets["cookies"]["cookie_secret"])
+    return cookies
+
+#restoring session state values from cookies.
+def restore_session_from_cookie(cookies: EncryptedCookieManager):
+    if "email" not in cookies or "login_time" not in cookies:
+        return False
+
+    try:
+        login_time = int(cookies["login_time"])
+    except ValueError:
+        return False
+
+    if time.time() - login_time > COOKIE_TTL:
+        cookies.clear()
+        cookies.save()
+        return False
+
+    user = get_user_by_email(cookies["email"])
+    if not user:
+        cookies.clear()
+        cookies.save()
+        return False
+
+    st.session_state.authenticated = True
+    st.session_state.email = user["email"]
+    st.session_state.name = user["name"]
+    st.session_state.user_record = user
+    st.session_state.last_active = datetime.now()
+    return True
+
+
+def set_login_cookie(cookies, email):
+    cookies["email"] = email
+    cookies["login_time"] = str(int(time.time()))
+    cookies.save()
+
+
+def clear_login_cookie(cookies):
+    cookies.clear()
+    cookies.save()
 
 # ============================================================
 # INITIALIZE LOCAL SESSION STATE
@@ -40,19 +86,20 @@ def init_auth_session():
 # ============================================================
 # INACTIVITY TIMEOUT
 # ============================================================
-INACTIVITY_MINUTES = 10
+INACTIVITY_MINUTES = 30
 
 def inactivity_timeout():
     if st.session_state.authenticated:
         elapsed = datetime.now() - st.session_state.last_active
         if elapsed > timedelta(minutes=INACTIVITY_MINUTES):
-            st.warning("⏱ Session timed out due to inactivity.")
             ip = get_ip()
             log_login_activity(st.session_state.email, "Auto Logout (Inactivity)", ip)
+
             logout_user()
-            st.rerun()
-        else:
-            st.session_state.last_active = datetime.now()
+            clear_login_cookie(init_cookies())
+
+            st.warning("Session timed out due to inactivity.")
+            
 
 
 # ============================================================
@@ -82,12 +129,12 @@ def logout_button():
     if st.button("Logout"):
         logout_user()
         st.switch_page("main.py")
-        st.rerun
+        st.rerun()
 
 # ============================================================
 # LOGIN SCREEN
 # ============================================================
-def render_login_screen():
+def render_login_screen(cookies):
     st.set_page_config(page_title = "Login", initial_sidebar_state="collapsed")
 
     #Logo
@@ -137,9 +184,7 @@ def render_login_screen():
                     st.rerun()
 
                 # Save persistent cookie
-                token_value = f"{email}|{int(time.time())}"
-                # cookies[COOKIE_NAME] = token_value
-                # cookies.save()
+                set_login_cookie(cookies, email)
 
                 st.rerun()
 
@@ -147,7 +192,7 @@ def render_login_screen():
 # ============================================================
 # FIRST LOGIN PASSWORD RESET
 # ============================================================
-def render_first_login_reset():
+def render_first_login_reset(cookies):
     st.title("🔑 Reset Password")
 
     with st.form("reset_form"):
@@ -173,9 +218,7 @@ def render_first_login_reset():
             st.session_state.force_pw_change = False
 
             # Refresh cookie timestamp
-            token_value = f"{st.session_state.email}|{int(time.time())}"
-            # cookies[COOKIE_NAME] = token_value
-            # cookies.save()
+            set_login_cookie(cookies, st.session_state.email)
 
             st.success("Password updated successfully.")
             st.rerun()
@@ -186,22 +229,33 @@ def render_first_login_reset():
 # ============================================================
 def auth_flow():
     init_auth_session()
-    inactivity_timeout()
- 
+    cookies = init_cookies()
+
+    if not cookies.ready():
+        st.write("Initializing session")
+        st.stop()
+
+    #inactivity_timeout()
+
+    #if not st.session_state.authenticated:
+    #    restore_session_from_cookie(cookies)
+
+
     # Not logged in
     if not st.session_state.authenticated and not st.session_state.force_pw_change:
-        render_login_screen()
+        render_login_screen(cookies)
         return False
 
     # First login password update
     if st.session_state.force_pw_change:
-        render_first_login_reset()
+        render_first_login_reset(cookies)
         return False
 
     # Logged in
     if st.button("🚪 Logout"):
         ip = get_ip()
         log_login_activity(st.session_state.email, "Logout", ip)
+        clear_login_cookie(cookies)
         logout_user()
         st.rerun()
 

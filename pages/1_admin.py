@@ -3,6 +3,7 @@ import pandas as pd
 
 import bcrypt
 import base64
+from datetime import datetime
 
 from utils.db import (
     get_uploaded_files,
@@ -14,10 +15,21 @@ from utils.db import (
     reset_user_password,
     get_login_logs,
     delete_uploaded_file,
+    load_budget_state_monthly,
+    save_budget_state_monthly,
+    get_active_budget_metadata
 )
 
 from utils.auth import logout_button, require_login
+from utils.expense_parser import parseExpense, get_expense_cache_key
+from utils.budget_parser import load_active_budget
+from utils.variance_helpers import variance_colour_style, get_variance_status
+from utils.budget_adapter import adapt_budget_long_to_classification
+
+
 from components.menu import sidebar_user_menu
+from components.dashboard import render_report_dashboard
+from components.classification_dashboard import render_classification_dashboard
 
 require_login()
 sidebar_user_menu()
@@ -25,7 +37,7 @@ logout_button()
 
 st.set_page_config(layout="wide")
 
-
+#EXPENSE AND BUDGET FILES
 
 # #Access control
 # if "authenticated" not in st.session_state or not st.session_state.authenticated:
@@ -60,7 +72,8 @@ admin_choice = st.sidebar.radio(
         "🎯 Active Budget",
         "👥 User Management",
         "📜 Login Activity",
-        "📁 File Management"
+        "📁 File Management",
+        "📊 Dashboard"
     ]
 )
 
@@ -222,76 +235,109 @@ elif admin_choice == "📁 File Management":
         st.dataframe(df_files, width = 'content')
 
     st.divider()
-    st.subheader("📤 Upload New File")
+    # st.subheader("📤 Upload New File")
 
-    # -----------------------------
-    # UPLOAD NEW FILE
-    # -----------------------------
-    with st.form("file_upload_form"):
-        uploaded = st.file_uploader("Choose a .xlsx file", type=["xlsx"])
-        custom_name = st.text_input("Custom File Name (Required)")
-        file_type = st.selectbox(
-            "File Type",
-            ["budget(opex)", "budget(capex)"]
-        )
+    #FILE UPLOAD FORM
+    with st.expander("Upload Files"):
+        with st.form("file_upload_form"):
+            uploaded = st.file_uploader("Choose a .xlsx file", type=["xlsx"])
+            custom_name = st.text_input("Custom File Name (Required)")
+            file_type = st.selectbox(
+                "Budget Type",
+                ["budget(opex)", "budget(capex)"]
+            )
 
-        submit_upload = st.form_submit_button("Upload File")
+            #Pulling current year, select box options for the year.
+            #Displays options for the previous 5 years and future 5 years.
+            current_year = datetime.now().year
+            year_opts = [year for year in range(current_year-5, current_year + 6)]
+            year = st.selectbox("Input Year", options=year_opts, index = 5)
 
-        if submit_upload:
-            if not uploaded:
-                st.error("Please choose a file.")
-            elif not custom_name.strip():
-                st.error("Please enter a file name.")
-            else:
-                from utils.drive_utils import upload_to_drive_and_log
-                try:
-                    result_url = upload_to_drive_and_log(
-                        uploaded,
-                        file_type,
-                        st.session_state.email,
-                        custom_name
-                    )
+            submit_upload = st.form_submit_button("Upload File")
 
-                    if result_url:
-                        st.success("✅ File uploaded successfully.")
-                        st.write(f"[View File]({result_url})")
+            if submit_upload:
+                if not uploaded:
+                    st.error("Please choose a file.")
+                elif not custom_name.strip():
+                    st.error("Please enter a file name.")
+                elif not year:
+                    st.error("Please input budget year")
+                else:
+                    from utils.drive_utils import upload_to_drive_and_log
+                    try:
+                        result_url = upload_to_drive_and_log(
+                            uploaded,
+                            file_type,
+                            st.session_state.email,
+                            custom_name,
+                            year
+                        )
+
+                        if result_url:
+                            st.success("✅ File uploaded successfully.")
+                            st.write(f"[View File]({result_url})")
+                            st.rerun()
+                        else:
+                            st.error("Upload failed. Please try again.")
+
+                    except Exception as e:
+                        st.error(f"Upload error: {e}")
+
+ 
+    
+    #File delete form
+    with st.expander("Delete Files"):
+        st.subheader("🗑️ Delete File Record")
+        if df_files.empty:
+            st.info("No files available to delete.")
+        else:
+            selected_file = st.selectbox(
+                "Select file record to delete",
+                df_files["file_name"].tolist()
+            )
+
+            # Quick details
+            sel_row = df_files[df_files["file_name"] == selected_file].iloc[0]
+            st.caption(
+                f"Type: {sel_row.get('file_type')} • "
+                f"Uploaded by: {sel_row.get('uploader_email')} • "
+                f"At: {sel_row.get('timestamp')}"
+            )
+
+            confirm = st.checkbox("Yes, delete this file record")
+            if st.button("Delete File Record"):
+                if not confirm:
+                    st.error("Please confirm deletion first.")
+                else:
+                    try:
+                        delete_uploaded_file(selected_file)
+                        st.success("File record deleted.")
                         st.rerun()
-                    else:
-                        st.error("Upload failed. Please try again.")
+                    except Exception as e:
+                        st.error(f"Error deleting record: {e}")
 
-                except Exception as e:
-                    st.error(f"Upload error: {e}")
+   
 
-    st.divider()
-    st.subheader("🗑️ Delete File Record")
+elif admin_choice == "📊 Dashboard":
+    budget_df_long = load_active_budget()
+    budget_df = adapt_budget_long_to_classification(budget_df_long)
+    
+    budgetdata = get_active_budget_metadata()
+    budgetyear = budgetdata.get("year")
+    budget_type= budgetdata.get("file_type")
+    selected_budget = budgetdata.get("file_name")
 
-    # -----------------------------
-    # DELETE FILE RECORD
-    # -----------------------------
-    if df_files.empty:
-        st.info("No files available to delete.")
-    else:
-        selected_file = st.selectbox(
-            "Select file record to delete",
-            df_files["file_name"].tolist()
-        )
-
-        # Quick details
-        sel_row = df_files[df_files["file_name"] == selected_file].iloc[0]
-        st.caption(
-            f"Type: {sel_row.get('file_type')} • "
-            f"Uploaded by: {sel_row.get('uploader_email')} • "
-            f"At: {sel_row.get('timestamp')}"
-        )
-
-        confirm = st.checkbox("Yes, delete this file record")
-        if st.button("Delete File Record"):
-            if not confirm:
-                st.error("Please confirm deletion first.")
-            else:
-                try:
-                    delete_uploaded_file(selected_file)
-                    st.success("File record deleted.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting record: {e}")
+    #st.write(f"{selected_budget}")
+    expense_df = parseExpense(expense_file_id=st.secrets["GOOGLE"]["expense_sheet"],
+                              budget_year=budgetyear,
+                              budget_type=budget_type,
+                              cache_day_key=get_expense_cache_key())
+    
+    render_report_dashboard(
+    df_budget=budget_df,
+    df_expense=expense_df,
+    selected_budget=selected_budget,
+    render_classification_dashboard=render_classification_dashboard,
+    load_budget_state_monthly=load_budget_state_monthly,
+    save_budget_state_monthly=save_budget_state_monthly,
+)

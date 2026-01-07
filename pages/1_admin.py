@@ -4,6 +4,7 @@ import pandas as pd
 import bcrypt
 import base64
 from datetime import datetime
+import time
 
 from utils.db import (
     get_uploaded_files,
@@ -23,7 +24,6 @@ from utils.db import (
 from utils.auth import logout_button, require_login
 from utils.expense_parser import parseExpense, get_expense_cache_key
 from utils.budget_parser import load_active_budget
-from utils.variance_helpers import variance_colour_style, get_variance_status
 from utils.budget_adapter import adapt_budget_long_to_classification
 
 
@@ -35,7 +35,7 @@ require_login()
 sidebar_user_menu()
 logout_button()
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 #EXPENSE AND BUDGET FILES
 
@@ -51,14 +51,14 @@ if role != "admin":
     st.stop()
 
 ##Hiding (main) page options using CSS
-st.markdown("""
-    <style>
-        /* Hide only the first page link ("Main") */
-        [data-testid="stSidebarNav"] li:nth-child(1) {
-            display: none !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# st.markdown("""
+#     <style>
+#         /* Hide only the first page link ("Main") */
+#         [data-testid="stSidebarNav"] li:nth-child(1) {
+#             display: none !important;
+#         }
+#     </style>
+# """, unsafe_allow_html=True)
 
 
 # ============================================================
@@ -77,7 +77,7 @@ admin_choice = st.sidebar.radio(
     ]
 )
 
-st.title("🛠️ Administrator Console")
+#st.title("🛠️ Administrator Console")
 
 
 # ============================================================
@@ -161,6 +161,7 @@ elif admin_choice == "👥 User Management":
                 encoded = base64.b64encode(hashed).decode()
                 add_user(name, username, email, encoded, role)
                 st.success("User added.")
+                time.sleep(1)
                 st.rerun()
 
     st.divider()

@@ -23,5 +23,5 @@ st.set_page_config(initial_sidebar_state="collapsed")
 
 if role == 'admin':
     st.switch_page("pages/1_admin.py")
-elif role == "manager":
-    st.switch_page("pages/2_Dashboard.py")
+elif role == "user":
+    st.switch_page("pages/3_user.py")

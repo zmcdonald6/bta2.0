@@ -133,6 +133,10 @@ def render_report_dashboard(
     # 7. Status calculation
     # -----------------------------
     def get_status(row):
+        # Check for OOB rows first - they should always show "Out of Budget"
+        if row["Category"] == "OOB":
+            return "Out of Budget"
+        
         budget = row["Amount Budgeted"]
         spent = row["Amount Spent"]
 
@@ -144,25 +148,123 @@ def render_report_dashboard(
         if usage <= 0.7:
             return "Within Budget"
         elif usage <= 1.0:
-            return "Warning"
+            return "Warning - Approaching Limit"
         else:
             return "Overspent"
 
     final_df["Status"] = final_df.apply(get_status, axis=1)
 
     # -----------------------------
-    # 8. Formatting + display
+    # 8. Add category totals at the top of each category
     # -----------------------------
-    final_df = final_df.sort_values(
-        ["Category", "Sub-Category"],
-        key=lambda s: s.astype(str)
-    ).reset_index(drop=True)
-
-    st.data_editor(
-        final_df,
-        use_container_width=True,
-        disabled=True,
+    # Calculate category totals
+    category_totals = (
+        final_df.groupby("Category", as_index=False)
+        .agg({
+            "Amount Budgeted": "sum",
+            "Amount Spent": "sum",
+            "Variance": "sum"
+        })
+    )
+    
+    # Create category total rows with special Sub-Category indicator
+    category_totals["Sub-Category"] = "TOTAL"
+    
+    # Calculate status for category totals
+    category_totals["Status"] = category_totals.apply(get_status, axis=1)
+    
+    # Reorder columns to match final_df
+    category_totals = category_totals[["Category", "Sub-Category", "Amount Budgeted", "Amount Spent", "Variance", "Status"]]
+    
+    # -----------------------------
+    # 9. Combine totals with line items, sorted by category
+    # -----------------------------
+    # Create a list to hold the final dataframe rows
+    result_rows = []
+    
+    # Get unique categories in sorted order
+    categories = sorted(final_df["Category"].unique())
+    
+    for category in categories:
+        # Add category total row first
+        cat_total = category_totals[category_totals["Category"] == category]
+        if not cat_total.empty:
+            result_rows.append(cat_total.iloc[0].to_dict())
+        
+        # Then add all subcategory rows for this category
+        cat_rows = final_df[final_df["Category"] == category].copy()
+        # Sort subcategories within the category
+        cat_rows = cat_rows.sort_values("Sub-Category", key=lambda s: s.astype(str))
+        result_rows.extend(cat_rows.to_dict(orient="records"))
+    
+    # Create final dataframe with category totals at top
+    final_df_with_totals = pd.DataFrame(result_rows)
+    
+    # -----------------------------
+    # 10. Formatting + display
+    # -----------------------------
+    # Prepare display dataframe
+    display_df = final_df_with_totals.copy()
+    
+    # Indent subcategories by adding spaces (visual indentation)
+    mask = display_df["Sub-Category"] != "TOTAL"
+    display_df.loc[mask, "Sub-Category"] = "  " + display_df.loc[mask, "Sub-Category"].astype(str)
+    
+    # Select columns for display
+    display_cols = ["Category", "Sub-Category", "Amount Budgeted", "Amount Spent", "Variance", "Status"]
+    
+    # Styling function for bold totals
+    def make_total_bold(row):
+        """Make TOTAL rows bold"""
+        if row["Sub-Category"] == "TOTAL":
+            return ["font-weight: bold"] * len(row)
+        return [""] * len(row)
+    
+    # Styling function for variance colors based on Status
+    def variance_colour_style(row):
+        """Color code Variance column based on Status"""
+        # Default = no styling
+        styles = [""] * len(row)
+        
+        # Get status from the row
+        status = row["Status"]
+        
+        # Determine color based on status
+        if status == "Within Budget":
+            colour = "background-color: #90EE90; color: black;"  # Light green
+        elif status == "Overspent":
+            colour = "background-color: #8B0000; color: white;"  # Light red
+        elif status == "Out of Budget":
+            colour = "background-color: #FFA500; color: black;"  # Orange
+        elif status == "Warning - Approaching Limit":
+            colour = "background-color: #ADD8E6; color: black;"  # Light blue
+        else:
+            colour = ""  # No styling for unknown status
+        
+        # Apply to Variance column only
+        try:
+            index = row.index.get_loc("Variance")
+            styles[index] = colour
+        except Exception as e:
+            pass  # Column not found, skip styling
+        
+        return styles
+    
+    # Apply both styling functions
+    styled_df = (
+        display_df[display_cols]
+        .style.apply(make_total_bold, axis=1)
+        .apply(variance_colour_style, axis=1)
+    )
+    
+    # Display using styled dataframe
+    st.dataframe(
+        styled_df,
+        width='stretch',
+        hide_index=True,
         column_config={
+            "Category": st.column_config.TextColumn(),
+            "Sub-Category": st.column_config.TextColumn(),
             "Amount Budgeted": st.column_config.NumberColumn(format="$%.2f"),
             "Amount Spent": st.column_config.NumberColumn(format="$%.2f"),
             "Variance": st.column_config.NumberColumn(format="$%.2f"),

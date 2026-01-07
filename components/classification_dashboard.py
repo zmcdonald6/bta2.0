@@ -60,7 +60,7 @@ def render_classification_dashboard(df_budget, df_expense, selected_budget,
     # ============================================================
     # DASHBOARD SUMMARY — Tiles + Totals
     # ============================================================
-    st.subheader("📊 Budget Classification Dashboard")
+    st.subheader("📊 Budget Health Summary")
 
     status_options = [
         "Wishlist", "To be confirmed", "Spent", "To be spent",
@@ -172,50 +172,55 @@ def render_classification_dashboard(df_budget, df_expense, selected_budget,
                 )
 
     # ============================================================
-    # YEARLY EDITOR
+    # Classifications EDITOR
     # ============================================================
-    st.subheader("📘 Budget Classifications (Yearly per Line Item)")
+    #Creating space between dashboard and editor
+    st.write("")
+    st.write("")
+    st.write("")
+    with st.expander("Apply Budget Classifications"):
+        st.subheader("📘 Budget Classifications")
 
-    editor_cols = {
-        "Total Amount": st.column_config.NumberColumn(disabled=True, format="$%.2f"),
-        "Status Category": st.column_config.SelectboxColumn(options=status_options),
-    }
+        editor_cols = {
+            "Total Amount": st.column_config.NumberColumn(disabled=True, format="$%.2f"),
+            "Status Category": st.column_config.SelectboxColumn(options=status_options),
+        }
 
-    # Unique key ensures Streamlit never restores old data
-    editor_key = f"editor_{selected_budget}_{st.session_state.editor_version}"
+        # Unique key ensures Streamlit never restores old data
+        editor_key = f"editor_{selected_budget}_{st.session_state.editor_version}"
 
-    edited_df = st.data_editor(
-        merged_df,
-        column_config=editor_cols,
-        width='stretch',
-        key=editor_key
-    )
-
-    # ============================================================
-    # ONE-BUTTON SAVE — Writes to MySQL
-    # ============================================================
-    if st.button("💾 Save Classifications"):
-
-        # Prepare data for saving - merge with annual totals from budget
-        final_df = edited_df.merge(
-            df_budget[["Category", "Sub-Category", "Total"]],
-            on=["Category", "Sub-Category"],
-            how="left"
+        edited_df = st.data_editor(
+            merged_df,
+            column_config=editor_cols,
+            width='stretch',
+            key=editor_key
         )
 
-        # Rename Total to Amount for database compatibility
-        final_df = final_df.rename(columns={"Total": "Amount"})
+        # ============================================================
+        # ONE-BUTTON SAVE — Writes to MySQL
+        # ============================================================
+        if st.button("💾 Save Classifications"):
 
-        # Select only required columns
-        final_df = final_df[["Category", "Sub-Category", "Amount", "Status Category"]]
+            # Prepare data for saving - merge with annual totals from budget
+            final_df = edited_df.merge(
+                df_budget[["Category", "Sub-Category", "Total"]],
+                on=["Category", "Sub-Category"],
+                how="left"
+            )
 
-        # Replace NaN with None for MySQL compatibility
-        final_df = final_df.where(pd.notnull(final_df), None)
+            # Rename Total to Amount for database compatibility
+            final_df = final_df.rename(columns={"Total": "Amount"})
 
-        save_budget_state_monthly(selected_budget, final_df, st.session_state.email)
+            # Select only required columns
+            final_df = final_df[["Category", "Sub-Category", "Amount", "Status Category"]]
 
-        # Force clean widget reload
-        st.session_state.editor_version += 1
+            # Replace NaN with None for MySQL compatibility
+            final_df = final_df.where(pd.notnull(final_df), None)
 
-        st.success("🎉 Saved! Reloading updated classifications...")
-        st.rerun()
+            save_budget_state_monthly(selected_budget, final_df, st.session_state.email)
+
+            # Force clean widget reload
+            st.session_state.editor_version += 1
+
+            st.success("🎉 Saved! Reloading updated classifications...")
+            st.rerun()

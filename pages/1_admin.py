@@ -69,11 +69,11 @@ st.sidebar.title("⚙️ Admin Panel")
 admin_choice = st.sidebar.radio(
     "Menu",
     [
+        "📊 Dashboard",
         "🎯 Active Budget",
         "👥 User Management",
         "📜 Login Activity",
         "📁 File Management",
-        "📊 Dashboard"
     ]
 )
 

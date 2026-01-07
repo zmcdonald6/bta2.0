@@ -68,6 +68,13 @@ def render_classification_dashboard(df_budget, df_expense, selected_budget,
         "Will not be spent", "Out of Budget"
     ]
 
+    editor_options = [
+        "Wishlist", "To be confirmed", "To be spent",
+        "To be spent (Projects)", "To be spent (Recurring)",
+        "Will not be spent"
+    ]
+    
+
     # Compute summary using annual totals
     if saved_state.empty:
         rows_summary = pd.DataFrame({
@@ -183,7 +190,7 @@ def render_classification_dashboard(df_budget, df_expense, selected_budget,
 
         editor_cols = {
             "Total Amount": st.column_config.NumberColumn(disabled=True, format="$%.2f"),
-            "Status Category": st.column_config.SelectboxColumn(options=status_options),
+            "Status Category": st.column_config.SelectboxColumn(options=editor_options),
         }
 
         # Unique key ensures Streamlit never restores old data

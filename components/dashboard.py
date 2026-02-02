@@ -364,7 +364,7 @@ def render_report_dashboard(
                             
                             col1, col2 = st.columns(2)
                             with col1:
-                                st.metric("Total Expenses", f"${total_spent:,.2f}")
+                                st.metric("Total Expenses(USD)", f"${total_spent:,.2f}")
                             with col2:
                                 st.metric("Number of Transactions", num_expenses)
                             

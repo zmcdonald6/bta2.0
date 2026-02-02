@@ -186,3 +186,116 @@ def parseExpense(
     )
 
     return df_agg
+
+@st.cache_data(show_spinner="Loading expense details…")
+def load_raw_expenses(
+    expense_file_id: str,
+    budget_year: int,
+    budget_type: str,
+    cache_day_key: str
+) -> pd.DataFrame:
+    """
+    Loads the canonical expense CSV from Google Drive, applies all
+    business filters, converts amounts to USD, but DOES NOT aggregate.
+    
+    Returns individual expense rows with all original columns plus:
+      - category_display
+      - subcategory_display
+      - amount_spent (USD)
+    """
+    # --------------------------------------------------
+    # 1. Load expense CSV from Drive
+    # --------------------------------------------------
+    file_bytes = download_file(expense_file_id)
+    df = pd.read_csv(file_bytes)
+
+    # --------------------------------------------------
+    # 2. Validate required columns
+    # --------------------------------------------------
+    required_columns = {
+        "Company",
+        "Vendor",
+        "Classification",
+        "Sub-Category",
+        "Amount",
+        "Invoice Date",
+        "Status",
+        "Approver-1 approval",
+        "Approver-2 approval",
+        "Approver-3 approval",
+        "Currency",
+        "Budget Year",
+    }
+
+    missing = required_columns - set(df.columns)
+    if missing:
+        raise ValueError(f"Expense file missing required columns: {missing}")
+
+    # --------------------------------------------------
+    # 3. Apply hard business filters
+    # --------------------------------------------------
+
+    # Company
+    df = df[df["Company"] == "Musson"]
+
+    # Budget year
+    df = df[df["Budget Year"] == budget_year]
+
+    # Status (exclude void)
+    df = df[~df["Status"].astype(str).str.upper().eq("VOID")]
+
+    # Approver exclusions (any declined)
+    for col in [
+        "Approver-1 approval",
+        "Approver-2 approval",
+        "Approver-3 approval",
+    ]:
+        df = df[~df[col].astype(str).str.lower().eq("declined")]
+
+    # Classification vs budget type
+    budget_type = budget_type.lower()
+    if budget_type == "budget(opex)":
+        df = df[df["Classification"].astype(str).str.upper() == "OPEX"]
+    elif budget_type == "budget(capex)":
+        df = df[df["Classification"].astype(str).str.upper() == "CAPEX"]
+    else:
+        raise ValueError(f"Unknown budget type: {budget_type}")
+
+    # If nothing survives filtering, return empty but well-formed DF
+    if df.empty:
+        return pd.DataFrame()
+
+    # --------------------------------------------------
+    # 4. Parse category & subcategory from Sub-Category
+    # --------------------------------------------------
+    # Format: "<Category> *** <Subcategory>"
+
+    split_cols = (
+        df["Sub-Category"]
+        .astype(str)
+        .str.split("***", n=1, expand=True, regex = False)
+    )
+
+    if split_cols.shape[1] != 2:
+        raise ValueError(
+            "Sub-Category column must follow 'Category *** Subcategory' format"
+        )
+
+    df["category_display"] = split_cols[0].str.strip()
+    df["subcategory_display"] = split_cols[1].str.strip()
+
+    # --------------------------------------------------
+    # 5. Convert amounts to USD
+    # --------------------------------------------------
+    rates = get_usd_rates()
+
+    df["amount_spent"] = df.apply(
+        lambda row: convert_row_amount_to_usd(row, rates, df),
+        axis=1,
+    )
+
+    # Drop rows that could not be converted
+    df = df[pd.notna(df["amount_spent"])]
+
+    # Return raw expenses (not aggregated)
+    return df

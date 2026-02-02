@@ -334,6 +334,13 @@ elif admin_choice == "📊 Dashboard":
                               budget_type=budget_type,
                               cache_day_key=get_expense_cache_key())
     
+    st.markdown(f"""
+    <p style='text-align: center; color: white; font-size: 0.8rem;'>
+        Budget Name: <strong>{selected_budget}</strong><br>
+        Budget Year: <strong>{budgetyear}</strong>
+    </p>
+    """, unsafe_allow_html=True)
+
     render_report_dashboard(
     df_budget=budget_df,
     df_expense=expense_df,
@@ -341,4 +348,7 @@ elif admin_choice == "📊 Dashboard":
     render_classification_dashboard=render_classification_dashboard,
     load_budget_state_monthly=load_budget_state_monthly,
     save_budget_state_monthly=save_budget_state_monthly,
+    expense_file_id=st.secrets["GOOGLE"]["expense_sheet"],
+    budget_year=budgetyear,
+    budget_type=budget_type,
 )

@@ -197,9 +197,9 @@ def load_budget_state_monthly(file_name: str):
 
     db = get_db()
     with db.cursor() as c:
-        # Query for yearly classifications (no month column)
+        # Query for yearly classifications with allocated_amount
         query = """
-            SELECT category, subcategory, amount, status_category
+            SELECT category, subcategory, amount, allocated_amount, status_category
             FROM budget_state
             WHERE file_name = %s
         """
@@ -210,7 +210,7 @@ def load_budget_state_monthly(file_name: str):
     if not rows:
         return pd.DataFrame(columns=[
             "Category", "Sub-Category",
-            "Amount", "Status Category"
+            "Amount", "Allocated Amount", "Status Category"
         ])
 
     # Convert to DataFrame
@@ -221,11 +221,12 @@ def load_budget_state_monthly(file_name: str):
         "category": "Category",
         "subcategory": "Sub-Category",
         "amount": "Amount",
+        "allocated_amount": "Allocated Amount",
         "status_category": "Status Category",
     })
 
     # Ensure required columns exist
-    required = ["Category", "Sub-Category", "Amount", "Status Category"]
+    required = ["Category", "Sub-Category", "Amount", "Allocated Amount", "Status Category"]
     for col in required:
         if col not in df.columns:
             df[col] = None
@@ -235,9 +236,9 @@ def load_budget_state_monthly(file_name: str):
 def save_budget_state_monthly(file_name, df_yearly, user_email):
     """
     Saves budget-state yearly classification using MySQL UPSERT.
-    Only inserts new rows or updates existing ones.
+    Supports partial allocations - allows multiple rows per line item.
     Note: Function name kept as 'monthly' for backward compatibility.
-    Expects DataFrame with columns: Category, Sub-Category, Amount, Status Category
+    Expects DataFrame with columns: Category, Sub-Category, Amount, Allocated Amount, Status Category
     """
     db = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -245,13 +246,25 @@ def save_budget_state_monthly(file_name, df_yearly, user_email):
 
     with db.cursor() as c:
         for r in rows:
+            # Get allocated_amount, default to None if not provided
+            allocated_amount = r.get("Allocated Amount")
+            if allocated_amount is None or pd.isna(allocated_amount):
+                allocated_amount = None
+            else:
+                # Convert to float if it's a string
+                try:
+                    allocated_amount = float(allocated_amount)
+                except (ValueError, TypeError):
+                    allocated_amount = None
+            
             c.execute("""
                 INSERT INTO budget_state
-                (file_name, category, subcategory, amount, status_category, updated_by, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (file_name, category, subcategory, amount, allocated_amount, status_category, updated_by, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 
                 ON DUPLICATE KEY UPDATE
                     amount = VALUES(amount),
+                    allocated_amount = VALUES(allocated_amount),
                     status_category = VALUES(status_category),
                     updated_by = VALUES(updated_by),
                     updated_at = VALUES(updated_at)
@@ -260,6 +273,7 @@ def save_budget_state_monthly(file_name, df_yearly, user_email):
                 r["Category"],
                 r["Sub-Category"],
                 r["Amount"],
+                allocated_amount,
                 r["Status Category"],
                 user_email,
                 now

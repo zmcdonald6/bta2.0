@@ -6,11 +6,6 @@ from utils.db import (
     get_uploaded_files,
     get_active_budget,
     set_active_budget,
-    get_all_users,
-    add_user,
-    delete_user,
-    reset_user_password,
-    get_login_logs,
     delete_uploaded_file,
     load_budget_state_monthly,
     save_budget_state_monthly,
@@ -72,6 +67,13 @@ if user_choice == "📊 Dashboard":
     budget_type= budgetdata.get("file_type")
     selected_budget = budgetdata.get("file_name")
 
+    st.markdown(f"""
+    <p style='text-align: center; color: white; font-size: 0.8rem;'>
+        Budget Name: <strong>{selected_budget}</strong><br>
+        Budget Year: <strong>{budgetyear}</strong>
+    </p>
+    """, unsafe_allow_html=True)
+
     #Parsing expenses
     expense_df = parseExpense(expense_file_id=st.secrets["GOOGLE"]["expense_sheet"],
                               budget_year=budgetyear,
@@ -86,6 +88,9 @@ if user_choice == "📊 Dashboard":
     render_classification_dashboard=render_classification_dashboard,
     load_budget_state_monthly=load_budget_state_monthly,
     save_budget_state_monthly=save_budget_state_monthly,
+    expense_file_id=st.secrets["GOOGLE"]["expense_sheet"],
+    budget_year=budgetyear,
+    budget_type=budget_type,
 )
 
 #File Uploader
